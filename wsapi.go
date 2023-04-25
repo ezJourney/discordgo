@@ -59,6 +59,7 @@ func (s *Session) Open() error {
 
 	// If the websock is already open, bail out here.
 	if s.wsConn != nil {
+		s.log(LogError, "s.wsConn already opened")
 		return ErrWSAlreadyOpen
 	}
 
@@ -66,6 +67,7 @@ func (s *Session) Open() error {
 	if s.gateway == "" {
 		s.gateway, err = s.Gateway()
 		if err != nil {
+			s.log(LogError, "error to get gateway %s", err)
 			return err
 		}
 
@@ -103,14 +105,17 @@ func (s *Session) Open() error {
 	// When processed by onEvent the heartbeat goroutine will be started.
 	mt, m, err := s.wsConn.ReadMessage()
 	if err != nil {
+		s.log(LogError, "ReadMessage failed %s", err)
 		return err
 	}
 	e, err := s.onEvent(mt, m)
 	if err != nil {
+		s.log(LogError, "onEvent failed %s", err)
 		return err
 	}
 	if e.Operation != 10 {
 		err = fmt.Errorf("expecting Op 10, got Op %d instead", e.Operation)
+		s.log(LogError, "Operation %d", e.Operation)
 		return err
 	}
 	s.log(LogInformational, "Op 10 Hello Packet received from Discord")
@@ -118,6 +123,7 @@ func (s *Session) Open() error {
 	var h helloOp
 	if err = json.Unmarshal(e.RawData, &h); err != nil {
 		err = fmt.Errorf("error unmarshalling helloOp, %s", err)
+		s.log(LogError, "%s", err)
 		return err
 	}
 
@@ -130,6 +136,7 @@ func (s *Session) Open() error {
 		err = s.identify()
 		if err != nil {
 			err = fmt.Errorf("error sending identify packet to gateway, %s, %s", s.gateway, err)
+			s.log(LogError, "%s", err)
 			return err
 		}
 
@@ -148,6 +155,7 @@ func (s *Session) Open() error {
 		s.wsMutex.Unlock()
 		if err != nil {
 			err = fmt.Errorf("error sending gateway resume packet, %s, %s", s.gateway, err)
+			s.log(LogError, "%s", err)
 			return err
 		}
 
@@ -170,10 +178,12 @@ func (s *Session) Open() error {
 	// Now Discord should send us a READY or RESUMED packet.
 	mt, m, err = s.wsConn.ReadMessage()
 	if err != nil {
+		s.log(LogError, "read message failed %s", err)
 		return err
 	}
 	e, err = s.onEvent(mt, m)
 	if err != nil {
+		s.log(LogError, "onEvent failed %s", err)
 		return err
 	}
 	if e.Type != `READY` && e.Type != `RESUMED` {
@@ -280,6 +290,7 @@ func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}
 	s.log(LogInformational, "called")
 
 	if listening == nil || wsConn == nil {
+		s.log(LogError, "Nil ! %p, %p", listening, wsConn)
 		return
 	}
 
@@ -292,7 +303,7 @@ func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}
 		last := s.LastHeartbeatAck
 		s.RUnlock()
 		sequence := atomic.LoadInt64(s.sequence)
-		s.log(LogDebug, "sending gateway websocket heartbeat seq %d", sequence)
+		s.log(LogError, "sending gateway websocket heartbeat seq %d", sequence)
 		s.wsMutex.Lock()
 		s.LastHeartbeatSent = time.Now().UTC()
 		err = wsConn.WriteJSON(heartbeatOp{1, sequence})
@@ -306,6 +317,8 @@ func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}
 			s.Close()
 			s.reconnect()
 			return
+		} else {
+			s.log(LogError, "ready  %s  %d  %d", err, time.Now().UTC().Sub(last), (heartbeatIntervalMsec * FailedHeartbeatAcks))
 		}
 		s.Lock()
 		s.DataReady = true
@@ -662,10 +675,10 @@ type voiceChannelJoinOp struct {
 
 // ChannelVoiceJoin joins the session user to a voice channel.
 //
-//    gID     : Guild ID of the channel to join.
-//    cID     : Channel ID of the channel to join.
-//    mute    : If true, you will be set to muted upon joining.
-//    deaf    : If true, you will be set to deafened upon joining.
+//	gID     : Guild ID of the channel to join.
+//	cID     : Channel ID of the channel to join.
+//	mute    : If true, you will be set to muted upon joining.
+//	deaf    : If true, you will be set to deafened upon joining.
 func (s *Session) ChannelVoiceJoin(gID, cID string, mute, deaf bool) (voice *VoiceConnection, err error) {
 
 	s.log(LogInformational, "called")
@@ -709,10 +722,10 @@ func (s *Session) ChannelVoiceJoin(gID, cID string, mute, deaf bool) (voice *Voi
 //
 // This should only be used when the VoiceServerUpdate will be intercepted and used elsewhere.
 //
-//    gID     : Guild ID of the channel to join.
-//    cID     : Channel ID of the channel to join, leave empty to disconnect.
-//    mute    : If true, you will be set to muted upon joining.
-//    deaf    : If true, you will be set to deafened upon joining.
+//	gID     : Guild ID of the channel to join.
+//	cID     : Channel ID of the channel to join, leave empty to disconnect.
+//	mute    : If true, you will be set to muted upon joining.
+//	deaf    : If true, you will be set to deafened upon joining.
 func (s *Session) ChannelVoiceJoinManual(gID, cID string, mute, deaf bool) (err error) {
 
 	s.log(LogInformational, "called")
