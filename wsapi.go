@@ -47,7 +47,7 @@ type resumePacket struct {
 
 // Open creates a websocket connection to Discord.
 // See: https://discord.com/developers/docs/topics/gateway#connecting
-func (s *Session) Open() error {
+func (s *Session) Open(reconnect int) error {
 	s.log(LogInformational, "called")
 
 	var err error
@@ -208,7 +208,7 @@ func (s *Session) Open() error {
 	s.listening = make(chan interface{})
 
 	// Start sending heartbeats and reading messages from Discord.
-	go s.heartbeat(s.wsConn, s.listening, h.HeartbeatInterval)
+	go s.heartbeat(s.wsConn, s.listening, h.HeartbeatInterval, &reconnect)
 	go s.listen(s.wsConn, s.listening)
 
 	s.log(LogInformational, "exiting")
@@ -285,8 +285,9 @@ func (s *Session) HeartbeatLatency() time.Duration {
 // heartbeat sends regular heartbeats to Discord so it knows the client
 // is still connected.  If you do not send these heartbeats Discord will
 // disconnect the websocket connection after a few seconds.
-func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}, heartbeatIntervalMsec time.Duration) {
-
+func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}, heartbeatIntervalMsec time.Duration, reconnect *int) {
+	/*s.Close()
+	s.reconnect()*/
 	s.log(LogInformational, "called")
 
 	if listening == nil || wsConn == nil {
@@ -308,9 +309,11 @@ func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}
 		s.LastHeartbeatSent = time.Now().UTC()
 		err = wsConn.WriteJSON(heartbeatOp{1, sequence})
 		s.wsMutex.Unlock()
-		if err != nil || time.Now().UTC().Sub(last) > (heartbeatIntervalMsec*FailedHeartbeatAcks) {
+		if *reconnect == 0 || err != nil || time.Now().UTC().Sub(last) > (heartbeatIntervalMsec*FailedHeartbeatAcks) {
+			*reconnect = 1
+			s.log(LogError, "reconnect = %d", *reconnect)
 			if err != nil {
-				s.log(LogError, "error sending heartbeat to gateway %s, %s", s.gateway, err)
+				s.log(LogError, "error sending heartbeat to gateway %s, %s, %d, %d", s.gateway, err, time.Now().UTC().Sub(last), heartbeatIntervalMsec*FailedHeartbeatAcks)
 			} else {
 				s.log(LogError, "haven't gotten a heartbeat ACK in %v, triggering a reconnection", time.Now().UTC().Sub(last))
 			}
@@ -866,7 +869,7 @@ func (s *Session) reconnect() {
 		for {
 			s.log(LogInformational, "trying to reconnect to gateway")
 
-			err = s.Open()
+			err = s.Open(1)
 			if err == nil {
 				s.log(LogInformational, "successfully reconnected to gateway")
 
