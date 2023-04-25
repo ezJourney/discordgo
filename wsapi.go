@@ -286,8 +286,6 @@ func (s *Session) HeartbeatLatency() time.Duration {
 // is still connected.  If you do not send these heartbeats Discord will
 // disconnect the websocket connection after a few seconds.
 func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}, heartbeatIntervalMsec time.Duration, reconnect *int) {
-	/*s.Close()
-	s.reconnect()*/
 	s.log(LogInformational, "called")
 
 	if listening == nil || wsConn == nil {
@@ -304,14 +302,13 @@ func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}
 		last := s.LastHeartbeatAck
 		s.RUnlock()
 		sequence := atomic.LoadInt64(s.sequence)
-		s.log(LogError, "sending gateway websocket heartbeat seq %d", sequence)
+		s.log(LogInformational, "sending gateway websocket heartbeat seq %d", sequence)
 		s.wsMutex.Lock()
 		s.LastHeartbeatSent = time.Now().UTC()
 		err = wsConn.WriteJSON(heartbeatOp{1, sequence})
 		s.wsMutex.Unlock()
 		if *reconnect == 0 || err != nil || time.Now().UTC().Sub(last) > (heartbeatIntervalMsec*FailedHeartbeatAcks) {
 			*reconnect = 1
-			s.log(LogError, "reconnect = %d", *reconnect)
 			if err != nil {
 				s.log(LogError, "error sending heartbeat to gateway %s, %s, %d, %d", s.gateway, err, time.Now().UTC().Sub(last), heartbeatIntervalMsec*FailedHeartbeatAcks)
 			} else {
@@ -321,7 +318,7 @@ func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}
 			s.reconnect()
 			return
 		} else {
-			s.log(LogError, "ready  %s  %d  %d", err, time.Now().UTC().Sub(last), (heartbeatIntervalMsec * FailedHeartbeatAcks))
+			s.log(LogInformational, "ready  %s  %d  %d", err, time.Now().UTC().Sub(last), (heartbeatIntervalMsec * FailedHeartbeatAcks))
 		}
 		s.Lock()
 		s.DataReady = true
